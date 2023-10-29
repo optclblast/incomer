@@ -6,25 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"incomer/config"
+	"incomer/models"
 	"os"
 	"time"
 
-	"github.com/google/uuid"
-
-	"github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
-	DRIVER = "sqlite3"
+	DRIVER   = "sqlite3"
+	MAXLIMIT = 500
 )
+
+var GlobalStorage Storage
 
 type Storage interface {
 	Init(ctx context.Context) error
 	Connect(ctx context.Context) (*sql.DB, error)
 	SetConfiguration(ctx context.Context, args *config.Config) error
 	GetConfiguration(ctx context.Context) (*config.Config, error)
-	GetHistory(ctx context.Context) (*History, error)
+	GetHistory(ctx context.Context, from time.Time, to time.Time) (*History, error)
 	// TODO
+	NewIncomeEntry(ctx context.Context, entry models.Entry) error
 	// UpdateHistoryEntry(ctx context.Context) error
 	// WriteHistoryEntry(ctx context.Context) error
 }
@@ -38,17 +41,10 @@ type History struct {
 }
 
 type HistoryEntry struct {
-	Id          uuid.UUID `json:"id"`
-	Date        time.Time `json:"date"`
-	SpentTotal  float64   `json:"spent_total"`
-	GainedTotal float64   `json:"gained_total"`
-	Expenses    []Entry   `json:"expenses"`
-	Incomes     []Entry   `json:"incomes"`
-}
-
-type Entry struct {
-	Title  string  `json:"title"`
-	Amount float64 `json:"amount"`
+	Date    time.Time `json:"date"`
+	Title   string    `json:"title"`
+	Expense float64   `json:"expense"`
+	Income  float64   `json:"income"`
 }
 
 func NewStorage(ctx context.Context, dbFilePath string) (Storage, error) {
@@ -83,8 +79,31 @@ func (s *sqliteStorage) GetConfiguration(ctx context.Context) (*config.Config, e
 	return nil, nil
 }
 
-func (s *sqliteStorage) GetHistory(ctx context.Context) (*History, error) {
-	return nil, nil
+func (s *sqliteStorage) GetHistory(ctx context.Context, from time.Time, to time.Time) (*History, error) {
+	var entries []HistoryEntry = make([]HistoryEntry, 0)
+	q := "SELECT * FROM history_entries WHERE date >= ? AND date <= ? date LIMIT ?"
+
+	rows, err := s.db.QueryContext(ctx, q, from, to, MAXLIMIT)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("error select from history: %w", err)
+	}
+
+	if err = rows.Scan(entries); err != nil {
+		return nil, fmt.Errorf("error scan rows: %w", err)
+	}
+
+	return &History{Entries: entries}, nil
+}
+
+func (s *sqliteStorage) NewIncomeEntry(ctx context.Context, entry models.Entry) error {
+	if entry.Date.IsZero() {
+		entry.Date = time.Now()
+	}
+
+	q := "INSERT INTO history_entries (date, title, income) VALUES (?, ?, ?)"
+
+	_, err := s.db.ExecContext(ctx, q, entry.Date, entry.Title, entry.Income)
+	return err
 }
 
 // True if database file exists
@@ -94,53 +113,30 @@ func databaseExists(path string) bool {
 }
 
 func (s *sqliteStorage) Init(ctx context.Context) error {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelReadCommitted,
-	})
-	if err != nil {
-		return fmt.Errorf("error init transaction: %w", err)
-	}
-
 	var queries []string = []string{
 		qinit_config,
 		qinit_income_days,
 		qinit_dated_regular_expenses,
 		qinit_regular_expenses_data,
 		qinit_history_entries,
-		qinit_entries,
 	}
-
-	txContext, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	return handleExecTx(txContext, tx, queries)
-}
-
-// Helps to handle exec statements transaction
-func handleExecTx(ctx context.Context, tx *sql.Tx, queries []string) error {
-	var err error
 
 	for _, q := range queries {
-		var stmt *sql.Stmt = new(sql.Stmt)
-		stmt, err = tx.PrepareContext(ctx, q)
-		if err != nil {
-			err = fmt.Errorf("error preparing database initialization: %w", err)
-			break
-		}
+		err := func() error {
+			qCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
 
-		_, err = stmt.ExecContext(ctx)
+			_, err := s.db.ExecContext(qCtx, q)
+			if err != nil {
+				return fmt.Errorf("error executing database initialization query [ %s ]: %w", q, err)
+			}
+
+			return nil
+		}()
+
 		if err != nil {
-			err = fmt.Errorf("error executing one of tranactions statements: %w", err)
-			break
+			return fmt.Errorf("error initializing datanase: %w", err)
 		}
 	}
-
-	if err != nil {
-		rollbackErr := tx.Rollback()
-		if rollbackErr != nil {
-			return sqlite3.ErrAbortRollback
-		}
-	}
-
-	return tx.Commit()
+	return nil
 }

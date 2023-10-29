@@ -4,23 +4,24 @@ Copyright © 2023 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	confcmd "incomer/cmd/config"
+	"incomer/cmd/expenses"
+	"incomer/cmd/income"
 	"incomer/config"
+	"incomer/storage"
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "incomer",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-			examples and usage of using your application. For example:
-
-			Cobra is a CLI library for Go that empowers applications.
-			This application is a tool to generate the needed files
-			to quickly create a Cobra application.`,
+	Short: "",
+	Long:  ``,
 }
 
 func Execute() {
@@ -32,31 +33,62 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+	addSubcommands()
 
-	//fmt.Println(viper.)
+}
 
-	historyFile := viper.GetString(config.HISTORY_FILE_PATH_ARG)
-	if historyFile == "" {
-		panic("fatal error: can't get history file path")
-	}
-
-	//rootCmd.PersistentFlags().StringVar()
+func addSubcommands() {
+	rootCmd.AddCommand(income.IncomeCmd)
+	rootCmd.AddCommand(income.IncomesCmd)
+	rootCmd.AddCommand(expenses.ExpenseCmd)
+	rootCmd.AddCommand(expenses.ExpensesCmd)
+	rootCmd.AddCommand(confcmd.ConfigCmd)
 }
 
 func initConfig() {
-	usrHome, err := os.UserHomeDir()
+	var databasePath string
+
+	statefiledir, err := os.Getwd()
 	if err != nil {
-		panic("fatal error: " + err.Error())
+		panic("error can't parse statfile dir path: " + err.Error())
 	}
 
-	config.USER_HOME = usrHome
+	stateFileData, err := os.ReadFile(statefiledir + "/state.json")
+	if err != nil {
+		panic("error can't read from statfile.json: " + err.Error())
+	}
 
-	if _, err := os.Open(usrHome + "/" + config.CONFIG_FILE); errors.Is(err, os.ErrNotExist) {
-		err = config.CreateDefaultConfigFile()
+	var stateFile config.StateJSON
+	err = json.Unmarshal(stateFileData, &stateFile)
+	if err != nil {
+		panic("error can't parde from statfile.json data: " + err.Error())
+	}
+
+	if stateFile.CustomDBpath == "" {
+		homedir, err := os.UserHomeDir()
 		if err != nil {
-			panic("fatal error: " + err.Error())
+			panic("error can't parse user homedir path: " + err.Error())
+		}
+
+		databasePath = fmt.Sprintf("%s/incomer.db", homedir)
+	} else {
+		databasePath = stateFile.CustomDBpath
+	}
+
+	if _, err := os.Stat(databasePath); errors.Is(err, os.ErrNotExist) {
+		_, err = os.Create(databasePath)
+		if err != nil {
+			panic("error can't create new database: " + err.Error())
 		}
 	}
 
-	viper.SetConfigFile(config.CONFIG_FILE)
+	storage.GlobalStorage, err = storage.NewStorage(context.Background(), databasePath)
+	if err != nil {
+		panic(err)
+	}
+
+	err = storage.GlobalStorage.Init(context.Background())
+	if err != nil {
+		panic(err)
+	}
 }
