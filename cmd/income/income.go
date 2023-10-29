@@ -50,7 +50,7 @@ func init() {
 		"date",
 		"d",
 		"",
-		"Date of an income [day-month-year]",
+		"Date of an income [day.month.year]",
 	)
 
 	if err := IncomeCmd.MarkFlagRequired("amount"); err != nil {
@@ -92,8 +92,6 @@ func RunIncome(cmd *cobra.Command, args []string) {
 			os.Exit(0)
 		}
 	}
-
-	fmt.Println(incomeTitle, " ", incomeDate, " ", incomeAmount)
 
 	err := storage.GlobalStorage.Init(ctx)
 	if err != nil {

@@ -2,8 +2,8 @@ package storage
 
 const (
 	qinit_config = `CREATE TABLE IF NOT EXISTS config (
-		'monthly_income' REAL,
-		'monthly_expenses' REAL,
+		'monthly_income' REAL DEFAULT 0,
+		'monthly_expenses' REAL DEFAULT 0,
 		'history_file_path' TEXT
 	);`
 	qinit_income_days = `CREATE TABLE IF NOT EXISTS income_days_amount (
@@ -19,12 +19,12 @@ const (
 	qinit_regular_expenses_data = `CREATE TABLE IF NOT EXISTS regular_expenses_data (
 		'datahash' BLOB NOT NULL,
 		'title' INTEGER NOT NULL,
-		'amount' REAL
+		'amount' REAL DEFAULT 0
 	);`
 	qinit_history_entries = `CREATE TABLE IF NOT EXISTS history_entries (
 		'date' DATETIME,
 		'title' TEXT,
-		'expense' REAL,
-		'income' REAL
+		'expense' REAL DEFAULT 0,
+		'income' REAL DEFAULT 0
 	);`
 )

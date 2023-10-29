@@ -10,6 +10,7 @@ import (
 	"fmt"
 	confcmd "incomer/cmd/config"
 	"incomer/cmd/expenses"
+	"incomer/cmd/history"
 	"incomer/cmd/income"
 	"incomer/config"
 	"incomer/storage"
@@ -43,6 +44,7 @@ func addSubcommands() {
 	rootCmd.AddCommand(expenses.ExpenseCmd)
 	rootCmd.AddCommand(expenses.ExpensesCmd)
 	rootCmd.AddCommand(confcmd.ConfigCmd)
+	rootCmd.AddCommand(history.HistoryCmd)
 }
 
 func initConfig() {

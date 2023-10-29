@@ -3,6 +3,9 @@
 lint:
 	golangci-lint run
 
+b:
+	env GOOS=linux GOARCH=amd64 go build -o ./build/incomer .
+
 build_linux_amd64:
 	env GOOS=linux GOARCH=amd64 go build -o ./build/incomer .
 

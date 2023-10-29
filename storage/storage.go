@@ -81,17 +81,32 @@ func (s *sqliteStorage) GetConfiguration(ctx context.Context) (*config.Config, e
 
 func (s *sqliteStorage) GetHistory(ctx context.Context, from time.Time, to time.Time) (*History, error) {
 	var entries []HistoryEntry = make([]HistoryEntry, 0)
-	q := "SELECT * FROM history_entries WHERE date >= ? AND date <= ? date LIMIT ?"
+	if to.IsZero() {
+		to = time.Now().Add(24 * time.Hour)
+	}
+	q := "SELECT * FROM history_entries WHERE date BETWEEN date(?) AND date(?) LIMIT ?"
 
 	rows, err := s.db.QueryContext(ctx, q, from, to, MAXLIMIT)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("error select from history: %w", err)
 	}
+	defer rows.Close()
 
-	if err = rows.Scan(entries); err != nil {
-		return nil, fmt.Errorf("error scan rows: %w", err)
+	for rows.Next() {
+		var entry HistoryEntry
+
+		err = rows.Scan(
+			&entry.Date,
+			&entry.Title,
+			&entry.Income,
+			&entry.Expense,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scan rows: %w", err)
+		}
+
+		entries = append(entries, entry)
 	}
-
 	return &History{Entries: entries}, nil
 }
 
